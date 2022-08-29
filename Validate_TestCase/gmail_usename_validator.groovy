@@ -1,8 +1,7 @@
 package current_scripts
 
 class gmail_userName_validator {
-    //find a valid gmail username grom given input, create a test case table using the output
-  //GMAIL USERNAME Rule: https://support.google.com/mail/answer/9211434?hl=en
+    //find a valid gmail username test cases from https://support.google.com/mail/answer/9211434?hl=en
     static void main(String[] args) throws IOException {
         //6-30 chars long
         String rulePattern1 = "^[A-Za-z0-9\\.?]{6,30}@";
@@ -18,7 +17,7 @@ class gmail_userName_validator {
         BufferedReader br = new BufferedReader(new FileReader(input));
         String lines;
         FileWriter outPut = new FileWriter(new File("F:\\Scrapian\\testCase.txt"));
-        outPut.write("Test Case #\t\tInput\t\tActual RESULT\\Expected\\Pass/Fail\n\n");
+        outPut.write("Test Case #\t\tInput\t\tActual RESULT\t\tExpected\t\tPass/Fail\n\n");
         int usecaseNo = 0;
         while ((lines = br.readLine()) != null) {
             usecaseNo++;
@@ -26,19 +25,19 @@ class gmail_userName_validator {
             String data=line[0]
             String expected=line[1]
             String valid="FAIL"
-            boolean result = false;
+            String result = "false";
             boolean rule1 = data =~ rulePattern1
             boolean rule2 = data =~ rulePattern2
             boolean rule2_1 = data =~ rulePattern2_1
             boolean rule3 = data =~ rulePattern3
             boolean rule4 = data =~ rulePattern4
             if ((rule1 && rule3 && rule4) && !(rule2 || rule2_1)) {
-                result = true;
+                result = "true";
             }
-            if(result.equals(expected)){
+            if(result==expected){
                 valid="PASS"
             }
-            //System.out.println(("#" + usecaseNo + "\t\t\t" + data + "\t\t\t" + result + "\n"))
+            System.out.println(("# " + expected + "\t\t\t" + data + "\t\t\t" + result + "\n"))
             outPut.write("#" + usecaseNo + "\t\t\t" + data + "\t\t\t" + result+"\t\t\t"+expected+"\t\t\t"+valid+ "\n");
         }
         outPut.close();
