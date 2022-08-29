@@ -1,0 +1,100 @@
+package current_scripts;
+
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
+
+import java.io.*;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * This program will test if linkedIn website accepts the given userId, password combo. (Pair Test)
+ * From the results we can validate if the website's SigIn page is working properly or not.
+ * IF credentials are accepted by the website, it will redrirect to "https://www.linkedin.com/feed/" ==> **bestCase**
+ */
+class logInTest {
+    public static void main(String[] args) throws IOException, InterruptedException {
+        String userName = "";
+        String password = "";
+        String testUrl = "https://sg.linkedin.com/";
+        Map<String, String> dataMap = new HashMap<>();
+        File file = new File("F:\\Scrapian\\credentialCombo.txt");
+        BufferedReader br = new BufferedReader(new FileReader(file));
+        String data;
+        while ((data = br.readLine()) != null) {
+            System.out.println("DATA "+data);
+            String[] arr = data.split(",");
+            userName = arr[0];
+            password = arr[1];
+            dataMap.put(userName, password);
+        }
+        System.out.println("MAP " + dataMap);
+        doPairTesting(dataMap, testUrl);
+
+    }
+
+    private static void doPairTesting(Map<String, String> dataMap, String testUrl) throws InterruptedException, IOException {
+        WebDriver driver = driverSetUp();
+        File file = new File("F:\\Scrapian\\testOutput.txt");
+        FileWriter fw=new FileWriter(file);
+        fw.write("");
+        //looping through for every COMBO
+        for (Map.Entry<String, String> data : dataMap.entrySet()) {
+            driver.get(testUrl);
+            Thread.sleep(10000);
+            WebElement signInButton = driver.findElement(By.xpath("/html/body/nav/div/a[2]"));
+            signInButton.click();
+            WebElement userName = driver.findElement(By.id("username"));
+            WebElement password = driver.findElement(By.id("password"));
+            WebElement signIn = driver.findElement(By.xpath("//*[@id=\"organic-div\"]/form/div[3]/button"));
+            String email = data.getKey();
+            String pass = data.getValue();
+            String output="";
+            userName.sendKeys(email);
+            password.sendKeys(pass);
+            signIn.click();
+            Thread.sleep(5000);
+            String url = driver.getCurrentUrl();
+            if (url.equalsIgnoreCase("https://www.linkedin.com/feed/")) {
+                System.out.println("Access Passed");
+                output="Access Passed";
+                } else {
+                System.out.println("Access Denied");
+                output="Access Denied";
+            }
+            String line=email +" , "+pass+" >>>> "+output+"\n";
+            fw.append(line);
+        }
+        fw.close();
+        driver.quit();
+
+    }
+
+    private static WebDriver driverSetUp() {
+        String CHROME_DRIVER_PATH = "C:\\Users\\Administrator\\Documents\\selenium_driver\\chromedriver.exe";
+
+        System.setProperty("webdriver.chrome.driver", CHROME_DRIVER_PATH);
+        //set path
+        ChromeOptions options = new ChromeOptions();
+        options.addArguments(
+            // "--headless",
+            "--disable-gpu",
+            "--ignore-certificate-errors",
+            "--window-size=400,350",
+            "--silent",
+            "--blink-settings=imagesEnabled=false" // Don't load images
+        );
+        //
+
+        try {
+            return new ChromeDriver(options);
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+
+        return null;
+    }
+}
