@@ -1,0 +1,6 @@
+mashturamazed@gmail.com,true
+test_case@gmail.com,false
+tasty.mango@yahoo.com,false
+..pktnaqwet@gmail.com,false
+mashtura..mazed@gmail.com,false
+mashtura.mazed@gmail.com,true
