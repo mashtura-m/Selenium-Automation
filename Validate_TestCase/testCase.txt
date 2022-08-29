@@ -1,0 +1,8 @@
+Test Case #		Input		Actual RESULT		Expected		Pass/Fail
+
+#1			mashturamazed@gmail.com			true			true			FAIL
+#2			test_case@gmail.com			false			false			FAIL
+#3			tasty.mango@yahoo.com			false			false			FAIL
+#4			..pktnaqwet@gmail.com			false			false			FAIL
+#5			mashtura..mazed@gmail.com			false			false			FAIL
+#6			mashtura.mazed@gmail.com			true			true			FAIL
