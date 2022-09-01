@@ -2,6 +2,7 @@ import com.opencsv.CSVWriter
 import groovy.transform.Field
 
 import java.time.LocalDate
+import java.time.Period
 
 /* Notes
 * For the given url the data comes from the network url
@@ -9,121 +10,189 @@ import java.time.LocalDate
 * I have used regex to parse the entity detail from response
 * I have used OPEN CSV library to dump the data into CSV
 * */
+@Field
 String givenUrl = "https://www.interpol.int/How-we-work/Notices/View-Red-Notices"
-def html = invoke(givenUrl)
 @Field
 def countryMap = [:] //Mapping the Country abbriviation to CountryName
-def ccR = html =~ /option value="(\w{2})">([^<]+)/
-while (ccR.find()) {
-    def code = ccR.group(1)
-    def country = ccR.group(2)
-    countryMap.put(code, country)
-}
-
 @Field
-String filePath = "F:\\Scrapian\\output.csv"
+def colorMap = [:]
+@Field
+String filePath = "F:\\Automation_Testing\\interpol_output.csv"
 @Field
 File file = new File(filePath);
 @Field
 FileWriter outputfile = new FileWriter(file)
 @Field
-int i=1
+int total = 1
+@Field
+def entityID = []
+/*
+* Do Mapping for color code and Country code references 
+* from given url
+* */
 
-countryMap.each { key, val ->
-    def network_url = "https://ws-public.interpol.int/notices/v1/red?&nationality=$key"
-    jsonData = invoke(network_url).toString()
-    jsonData = jsonData.replaceAll(/\s+\n/, "\n").trim()
-    captureData(jsonData, val)
-    //pagination --> Finding the next page link
-    while (jsonData=~/(?ism)next\"\W+href":/){
-        def nextR=jsonData=~/(?ism)next\"\W+href":"([^"]+)/
-        if(nextR.find()) {
-            def nextPageUrl = nextR.group(1)
-            jsonData = invoke(nextPageUrl)
-            captureData(jsonData, val)
+def createMap() {
+    def jsonData = invokeUrl(givenUrl)
+    def ccR = jsonData =~ /option value="(\w{2})">([^<]+)/
+    while (ccR.find()) {
+        def code = ccR.group(1)
+        def country = ccR.group(2)
+        countryMap.put(code, country)
+    }
+    println(countryMap)
+    def colorReg = jsonData =~ /data-references='([^>]+)/
+    if (colorReg.find()) {
+        def desc = colorReg.group(1).replaceAll(/&quot;/, "").trim()
+        def regex = desc =~ /eyes:\{([^\}]+)/
+        if (regex.find()) {
+            def colorCodes = regex.group(1).split(",")
+            colorCodes.each { data ->
+                def code = data.split(":")[0]
+                def colorName = data.split(":")[1]
+                colorMap.put(code, colorName)
+            }
         }
     }
+}
+
+createMap()
+//traverse pages using "nationatity", "Gender" and "Wanted by" filters
+countryMap.each { key, val ->
+    def country_filter_Url = "https://ws-public.interpol.int/notices/v1/red?&nationality=$key"
+    getPageJson(country_filter_Url, val)
+    country_filter_Url = "https://ws-public.interpol.int/notices/v1/red?&arrestWarrantCountryId=$key"
+    getPageJson(country_filter_Url, null)
+    String genderFilterUrl = "https://ws-public.interpol.int/notices/v1/red?&nationality=$key&sexId=F"
+    getPageJson(genderFilterUrl, val)
+    genderFilterUrl = "https://ws-public.interpol.int/notices/v1/red?&nationality=$key&sexId=M"
+    getPageJson(genderFilterUrl, val)
+    genderFilterUrl = "https://ws-public.interpol.int/notices/v1/red?&arrestWarrantCountryId=$key&sexId=F"
+    getPageJson(genderFilterUrl, null)
+    genderFilterUrl = "https://ws-public.interpol.int/notices/v1/red?&arrestWarrantCountryId=$key&sexId=M"
+    getPageJson(genderFilterUrl, null)
+    genderFilterUrl = "https://ws-public.interpol.int/notices/v1/red?&sexId=U"
+    getPageJson(genderFilterUrl, null)
     //debug Purpose
     // throw new Exception(">>>>>>>>>>>>>")
 }
-println("TOTAL ENTITIES: $i")
+println("Total Entities: $total")
 
-def captureData(String source, def country) {
+/**
+ * This method will invoke the entityUrls and parse details form json response using REGEX 
+ */
+def captureEntityDetails(String source, def country) {
     // requirement
-    def name, dob, height, weight, nationality, eyecolor, pob = null, charges = null
-    def entityUrlMatcher = source =~ /"self"\W+"href":"([^"]+\d{5,})"/
+    def name, dob, height, weight, nationality, eyecolor, pob = null, charges = null, age
+    def entityUrlMatcher = source =~ /"self"\W+"href":"([^"]+-\d{2,})"/
     while (entityUrlMatcher.find()) {
         def ent_url = entityUrlMatcher.group(1).trim()
-        print("COUNTRY: $country ")
-        def html = invoke(ent_url)
-        def nameRegex = html =~ /forename":"([^"]+).+?name":"(.+?)"/
+        //removed dupe entities using the Entity ID that is the last part of the entity Url
+        def ID = ent_url.replaceAll(/^(\D+.+?)([^\/]+)$/, '$2')
+        if (entityID.contains(ID)) {
+            continue
+        } else {
+            entityID.add(ID)
+        }
+        //invokeUrl
+        def jsonData = invokeUrl(ent_url)
+        def nameRegex = jsonData =~ /forename":"([^"]+).+?name":"(.+?)"/
         if (nameRegex.find()) {
             name = nameRegex.group(2) + " " + nameRegex.group(1)
         }
-        def dobRegex = html =~ /date_of_birth":"([^"]+)/
+
+        def dobRegex = jsonData =~ /date_of_birth":"([^"]+)/
         if (dobRegex.find()) {
-            dob = dobRegex.group(1)
+            dob = dobRegex.group(1).replaceAll(/\//, "-").trim()
         }
-        def age=calcAge()
-        def chargeMatch = html =~ /charge":"([^"]+)/
+        age = convert_DOB_to_Age(dob)
+        def chargeMatch = jsonData =~ /charge":"([^"]+)/
         if (chargeMatch.find()) {
             charges = cleanData(chargeMatch.group(1))
         }
-        def pobMatch = html =~ /place_of_birth":"([^"]+)/
-        if (pobMatch.find()) {
-            pob = pobMatch.group(1) + "," + country
-        }else {
-            pob=country
+        def pobMatch = jsonData =~ /place_of_birth":"([^"]+)/
+        def cobMatch = jsonData =~ /country_of_birth_id":"([^"]+)/
+        if (pobMatch.find() && cobMatch.find()) {
+            pob = pobMatch.group(1) + "," + countryMap.get(cobMatch.group(1))
+        } else if (cobMatch.find()) {
+            pob = countryMap.get(cobMatch.group(1))
         }
-        def hr = html =~ /(?i)Height":([^\,]+)/
+        def hr = jsonData =~ /(?i)Height":([^\,]+)/
         if (hr.find()) {
-            height = hr.group(1) + "Meters"
+            height = hr.group(1).replaceAll(/0|null/, "")
+            if (height != "") {
+                height = height + " Meters"
+            }
         }
-        def wr = html =~ /(?i)Weight":([^\,]+)/
+        def wr = jsonData =~ /(?i)Weight":([^\,]+)/
         if (wr.find()) {
-            weight = wr.group(1) + "Kilograms"
+            weight = wr.group(1).replaceAll(/0|null/, "")
+            if (weight != "") {
+                weight = weight + " Kilograms"
+            }
         }
-        def er = html =~ /eyes_colors_id":([^\,]+)/
+        def er = jsonData =~ /eyes_colors_id":([^\,]+)/
         if (er.find()) {
-            eyecolor = er.group(1)
-            println(eyecolor)
+            eyecolor = er.group(1).replaceAll(/\[|\]|"|null/, "").trim()
+            if (eyecolor != "") {
+                eyecolor = colorMap.get(eyecolor)
+            }
         }
-        def nationR = html =~ /(?i)nationalities":([^\,]+)/
+        def sex
+        def sexR = jsonData =~ /sex_id":"(\w)"/
+        if (sexR.find()) {
+            sex = sexR.group(1).replaceAll(/"/, "").trim()
+        }
+        def nationR = jsonData =~ /(?i)nationalities":(.+?\])\,/
+        def nationList, nations = ""
         if (nationR.find()) {
-            nationality = nationR.group(1)
-            println(nationality)
+            nationality = nationR.group(1).replaceAll(/\[|\]|null/, "").trim()
+            nationList = nationality.split(",")
+            int len = nationList.size()
+            nationList.each { val ->
+                val = val.replaceAll(/"/, "").trim()
+                if (len > 1) {
+                    nations += countryMap.get(val) + ","
+                } else {
+                    nations += countryMap.get(val)
+                }
+                len--
+            }
         }
-        createEntity(name, dob, height, weight, nationality, eyecolor, pob, charges)
+        createEntity(name, dob, height, weight, nations, eyecolor, pob, charges, sex, age)
     }
-
 }
 
-def invoke(def url) {
+def invokeUrl(def url) {
     try {
-        println("INVOKING: $url")
+        println("Invoking : $url")
         return url.toURL().text
-    }catch(Exception e){
-        println("<<<<< COULD NOT INVOKE $url\nError Message: $e.message >>>>>")
+    } catch (Exception e) {
+        println("<<<<< COULD NOT invoke : $url\nError Message: $e.message >>>>>")
     }
 
 }
 
 def cleanData(def data) {
-    return data.replaceAll(/\r\n/, "\n")
+    data = data.replaceAll(/^\W+/, "").trim()
+    data = data.replaceAll(/\/r|\/n/, ";")
+    data = data.replaceAll("\\r\\n", ";").trim()
+    return data.replaceAll(/(?s)\s+/, " ")
 }
-
-def createEntity(def name, def dob, def height, def weight, def nationality, def eyecolor, def pob, def charges) {
+/**
+ * Multiple details for the same column are stored in a comma separated way
+ *
+ * */
+def createEntity(def name, def dob, def height, def weight, def nations, def eyecolor, def pob, def charges, def sex, def age) {
     //this method will dump data to CSV
-    writeToCSV(name, dob, height, weight, nationality, eyecolor, pob, charges)
-    i++
+    writeToCSV(name, age, sex, dob, height, weight, nations, eyecolor, pob, charges)
+    total++
 }
 
 def writeToCSV(String... args) {
     try {
         String[] header;
-        if (i == 1) {
-            header = ["Name", "Date Of Birth", "Height", "Weight", "Nationality", "Eye Color", "Place Of Birth", "Charges"]
-            i++
+        if (total == 1) {
+            header = ["Name", "Age", "Gender", "Date Of Birth", "Height", "Weight", "Nationality", "Eye Color", "Place Of Birth", "Charges"]
         }
         CSVWriter writer = new CSVWriter(outputfile);
         writer.writeNext(header)
@@ -137,8 +206,35 @@ def writeToCSV(String... args) {
     }
 }
 
-def calcAge() {
-    def today=LocalDate.now()
+def convert_DOB_to_Age(def date) {
+    //yyyy-mm-dd
+    def DOB
+    def dates = date.split("-")
+    if (dates.size() > 1) {
+        DOB = new LocalDate(dates[0].toInteger(), dates[1].toInteger(), date[2].toInteger())
+    } else {
+        DOB = new LocalDate(dates[0].toInteger(), 0, 0)
+    }
+    LocalDate today = LocalDate.now()
+    def age = Period.between(DOB, today).getYears()
+    return age.toString()
+}
 
+/*
+* The following method will handle pagination
+* */
 
+def getPageJson(String country_filter_Url, def val) {
+    def jsonData = invokeUrl(country_filter_Url).toString()
+    jsonData = jsonData.replaceAll(/\s+\n/, "\n").trim()
+    captureEntityDetails(jsonData, val)
+    //pagination --> Finding the next page link
+    while (jsonData =~ /(?ism)next\"\W+href":/) {
+        def nextR = jsonData =~ /(?ism)next\"\W+href":"([^"]+)/
+        if (nextR.find()) {
+            def nextPageUrl = nextR.group(1)
+            jsonData = invokeUrl(nextPageUrl).toString()
+            captureEntityDetails(jsonData, val)
+        }
+    }
 }
