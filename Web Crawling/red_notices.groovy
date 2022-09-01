@@ -26,8 +26,10 @@ FileWriter outputfile = new FileWriter(file)
 int total = 1
 @Field
 def entityID = []
+@Field
+String genderFilterUrl
 /*
-* Do Mapping for color code and Country code references 
+* Do Mapping for color code and Country code references
 * from given url
 * */
 
@@ -58,27 +60,75 @@ def createMap() {
 createMap()
 //traverse pages using "nationatity", "Gender" and "Wanted by" filters
 countryMap.each { key, val ->
-    def country_filter_Url = "https://ws-public.interpol.int/notices/v1/red?&nationality=$key"
+    print("COUNTRY: $val ")
+    def min_age = 20
+    def tailUrl
+    while (min_age < 100) {
+        def max_age_nation = min_age + 5
+        println("Start $min_age $max_age_nation")
+        def age_nation_filter = "https://ws-public.interpol.int/notices/v1/red?&nationality=$key&ageMin=$min_age&ageMax=$max_age_nation"
+        (tailUrl, max_age_nation) = getDataUrl(age_nation_filter, max_age_nation, min_age)
+        if (tailUrl) {
+            age_nation_filter = "https://ws-public.interpol.int/notices/v1/red?&nationality=$key" + tailUrl
+            println("Getting Nationwise $val")
+            getPageJson(age_nation_filter, val)
+        }
+        min_age=max_age_nation+1
+
+    }
+min_age=20
+while (min_age < 100) {
+    def max_age_arrest = min_age + 5
+    println("MIN: $min_age Max:$max_age_arrest")
+    def age_arrest_filter = "https://ws-public.interpol.int/notices/v1/red?&arrestWarrantCountryId=$key&ageMin=$min_age&ageMax=$max_age_arrest"
+    (tailUrl, max_age_arrest) = getDataUrl(age_arrest_filter, max_age_arrest, min_age)
+    if (tailUrl) {
+        println("Getting Arrestwise $val")
+        age_arrest_filter = "https://ws-public.interpol.int/notices/v1/red?&arrestWarrantCountryId=$key" + tailUrl
+        getPageJson(age_arrest_filter, null)
+      }
+    min_age=max_age_arrest+1
+
+
+}
+/*    def country_filter_Url = "https://ws-public.interpol.int/notices/v1/red?&nationality=$key"
     getPageJson(country_filter_Url, val)
     country_filter_Url = "https://ws-public.interpol.int/notices/v1/red?&arrestWarrantCountryId=$key"
     getPageJson(country_filter_Url, null)
-    String genderFilterUrl = "https://ws-public.interpol.int/notices/v1/red?&nationality=$key&sexId=F"
+    genderFilterUrl = "https://ws-public.interpol.int/notices/v1/red?&nationality=$key&sexId=F"
     getPageJson(genderFilterUrl, val)
     genderFilterUrl = "https://ws-public.interpol.int/notices/v1/red?&nationality=$key&sexId=M"
     getPageJson(genderFilterUrl, val)
     genderFilterUrl = "https://ws-public.interpol.int/notices/v1/red?&arrestWarrantCountryId=$key&sexId=F"
     getPageJson(genderFilterUrl, null)
     genderFilterUrl = "https://ws-public.interpol.int/notices/v1/red?&arrestWarrantCountryId=$key&sexId=M"
-    getPageJson(genderFilterUrl, null)
-    genderFilterUrl = "https://ws-public.interpol.int/notices/v1/red?&sexId=U"
-    getPageJson(genderFilterUrl, null)
-    //debug Purpose
-    // throw new Exception(">>>>>>>>>>>>>")
+    getPageJson(genderFilterUrl, null)*/
+//debug Purpose
+//throw new Exception(">>>>>>>>>>>>>")
 }
+
+def getDataUrl(def url, def max_age, def min_age) {
+
+    def jsonSource = invokeUrl(url).toString()
+    int tot = jsonSource.replaceAll(/(?sm)^(.+?"total":)(\d+)(.+?)$/, '$2').toInteger()
+    if (tot == 0) {
+        return [null, max_age]
+    }
+    if (tot > 160) {
+        max_age = min_age
+    } else {
+        max_age = min_age + 5
+    }
+    println("MIN: $min_age Max: $max_age")
+    return ["&resultPerPage=160&ageMin=$min_age&ageMax=$max_age", max_age]
+}
+
+genderFilterUrl = "https://ws-public.interpol.int/notices/v1/red?&sexId=U"
+getPageJson(genderFilterUrl, null)
 println("Total Entities: $total")
 
 /**
- * This method will invoke the entityUrls and parse details form json response using REGEX 
+ * This method will invoke the entityUrls and parse details form json response using REGEX
  */
 def captureEntityDetails(String source, def country) {
     // requirement
@@ -158,16 +208,20 @@ def captureEntityDetails(String source, def country) {
                 len--
             }
         }
-        createEntity(name, dob, height, weight, nations, eyecolor, pob, charges, sex, age)
+        ent_url = "https://www.interpol.int/How-we-work/Notices/View-Red-Notices#" + entityID
+        createEntity(name, dob, height, weight, nations, eyecolor, pob, charges, sex, age, ent_url)
+        //test url : https://www.interpol.int/How-we-work/Notices/View-Red-Notices#2009-17220
     }
 }
 
 def invokeUrl(def url) {
     try {
-        println("Invoking : $url")
-        return url.toURL().text
+        // println("Invoking : $url")
+        return context.invoke(["url": url, "cache": true])//url.toURL().text
     } catch (Exception e) {
+        Thread.sleep(20000)
         println("<<<<< COULD NOT invoke : $url\nError Message: $e.message >>>>>")
+        return context.invoke(["url": url, "cache": true])
     }
 
 }
@@ -182,17 +236,18 @@ def cleanData(def data) {
  * Multiple details for the same column are stored in a comma separated way
  *
  * */
-def createEntity(def name, def dob, def height, def weight, def nations, def eyecolor, def pob, def charges, def sex, def age) {
+def createEntity(def name, def dob, def height, def weight, def nations, def eyecolor, def pob, def charges, def sex, def age, def ent_url) {
     //this method will dump data to CSV
-    writeToCSV(name, age, sex, dob, height, weight, nations, eyecolor, pob, charges)
+    writeToCSV(name, age, sex, dob, height, weight, nations, eyecolor, pob, charges, ent_url)
     total++
+    println("Entity NO. $total")
 }
 
 def writeToCSV(String... args) {
     try {
         String[] header;
         if (total == 1) {
-            header = ["Name", "Age", "Gender", "Date Of Birth", "Height", "Weight", "Nationality", "Eye Color", "Place Of Birth", "Charges"]
+            header = ["Name", "Age", "Gender", "Date Of Birth", "Height", "Weight", "Nationality", "Eye Color", "Place Of Birth", "Charges", "Debug_url"]
         }
         CSVWriter writer = new CSVWriter(outputfile);
         writer.writeNext(header)
@@ -233,6 +288,7 @@ def getPageJson(String country_filter_Url, def val) {
         def nextR = jsonData =~ /(?ism)next\"\W+href":"([^"]+)/
         if (nextR.find()) {
             def nextPageUrl = nextR.group(1)
+            nextPageUrl = nextPageUrl.replaceAll(/=20/, "=160")
             jsonData = invokeUrl(nextPageUrl).toString()
             captureEntityDetails(jsonData, val)
         }
